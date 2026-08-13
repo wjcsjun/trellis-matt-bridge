@@ -45,7 +45,9 @@ The design rule is unchanged from v1:
 
 ### Codex profile
 
-Codex keeps the v1 strategy: **inline execution**. The installer places the three bridge skills under `.agents/skills/` and rewrites only the Codex-inline implementation/check routing. Trellis's stock Codex sub-agent route remains intact if you deliberately switch `codex.dispatch_mode` to `sub-agent`.
+Codex keeps the v1 strategy: **inline execution**. Current Trellis stable defaults Codex to `inline`; the installer places the three bridge skills under `.agents/skills/` and rewrites only the Codex-inline implementation/check routing.
+
+The v2 Codex adapter does **not** Matt-power Trellis's Codex sub-agent route. As a safety check, installation stops before writing if `.trellis/config.yaml` explicitly selects a non-inline `codex.dispatch_mode` (for example `sub-agent`). Set it to `inline`, or remove the explicit setting and use Trellis's current inline default, before installing this profile.
 
 ### Claude Code profile
 
@@ -143,6 +145,16 @@ Preview every text change without writing:
 python3 scripts/install_bridge.py /path/to/project --profile both --dry-run
 ```
 
+### Codex dispatch-mode preflight
+
+The Codex profile is intentionally inline-only in v2. Before calculating or writing patches, the installer checks `.trellis/config.yaml`:
+
+- missing `codex:` / missing `dispatch_mode` -> treated as Trellis's current `inline` default;
+- `codex.dispatch_mode: inline` -> supported;
+- an explicit non-inline value such as `sub-agent` -> exit before changing `workflow.md`, `AGENTS.md`, backups, or skill directories.
+
+This prevents a misleading partial install where planning is bridged but Codex implementation/check are still owned by Trellis's stock sub-agents.
+
 After installation, inspect:
 
 ```bash
@@ -234,6 +246,7 @@ python3 tests/test_install_bridge.py
 Tests cover:
 
 - Codex-only installation and idempotence;
+- Codex dispatch-mode preflight (`inline` accepted, explicit `sub-agent` rejected before writes);
 - Claude-only installation and sub-agent skill preloading;
 - preservation of non-Claude platform routing;
 - automatic dual-profile detection;
