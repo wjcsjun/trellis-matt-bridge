@@ -337,11 +337,55 @@ def make_diff(path: Path, before: str, after: str) -> str:
 
 def detect_profiles(repo_root: Path) -> set[str]:
     profiles: set[str] = set()
-    if (repo_root / ".codex").exists():
+    if (repo_root / ".codex").is_dir():
         profiles.add("codex")
     if (repo_root / ".claude" / "agents" / "trellis-implement.md").is_file() and (repo_root / ".claude" / "agents" / "trellis-check.md").is_file():
         profiles.add("claude")
     return profiles
+
+
+def read_codex_dispatch_mode(repo_root: Path) -> str:
+    """Return the explicitly configured Codex dispatch mode, or Trellis's inline default.
+
+    Trellis currently uses a small top-level `codex:` YAML block. Avoid adding a
+    PyYAML dependency just for this preflight: read only the `dispatch_mode` scalar
+    inside that block and treat an omitted block/key as the current `inline` default.
+    """
+    config = repo_root / ".trellis" / "config.yaml"
+    if not config.is_file():
+        return "inline"
+
+    lines = config.read_text(encoding="utf-8").splitlines()
+    codex_indent: int | None = None
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        inline_block = re.match(r"^\s*codex\s*:\s*\{(.*?)\}\s*(?:#.*)?$", line)
+        if inline_block:
+            dispatch = re.search(r"(?:^|,)\s*dispatch_mode\s*:\s*([^,}]+)", inline_block.group(1))
+            if dispatch:
+                value = dispatch.group(1).strip().strip("'\"")
+                return value or "inline"
+            return "inline"
+
+        indent = len(line) - len(line.lstrip(" "))
+        if codex_indent is None:
+            if re.match(r"^\s*codex\s*:\s*(?:#.*)?$", line):
+                codex_indent = indent
+            continue
+
+        if indent <= codex_indent:
+            break
+
+        match = re.match(r"^\s*dispatch_mode\s*:\s*(.*?)\s*$", line)
+        if not match:
+            continue
+        value = match.group(1).split("#", 1)[0].strip().strip("'\"")
+        return value or "inline"
+
+    return "inline"
 
 
 def backup_once(path: Path) -> Path:
@@ -369,6 +413,21 @@ def main() -> int:
     if not profiles:
         print("error: auto detection found neither .codex nor Trellis Claude agent definitions; pass --profile codex|claude|both after initializing that platform.", file=sys.stderr)
         return 2
+
+    if "codex" in profiles:
+        if not (repo_root / ".codex").is_dir():
+            print("error: missing .codex/. Initialize/update Trellis with Codex support first.", file=sys.stderr)
+            return 2
+        dispatch_mode = read_codex_dispatch_mode(repo_root)
+        if dispatch_mode != "inline":
+            print(
+                "error: the Codex bridge profile supports Trellis inline mode only, but "
+                f".trellis/config.yaml sets codex.dispatch_mode: {dispatch_mode}. "
+                "Set it to `inline` (or remove the explicit setting; current Trellis defaults to inline), "
+                "then rerun. No files were changed.",
+                file=sys.stderr,
+            )
+            return 4
 
     if "claude" in profiles:
         for name in ("trellis-implement.md", "trellis-check.md"):
