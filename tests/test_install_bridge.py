@@ -117,12 +117,23 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["python3", str(INSTALLER), *args], text=True, capture_output=True, check=False)
 
 
-def make_repo(root: Path, *, codex: bool = False, claude: bool = False) -> None:
+def make_repo(
+    root: Path,
+    *,
+    codex: bool = False,
+    claude: bool = False,
+    codex_dispatch_mode: str | None = None,
+) -> None:
     (root / ".trellis").mkdir(parents=True)
     (root / ".trellis" / "workflow.md").write_text(FIXTURE, encoding="utf-8")
     if codex:
         (root / ".codex").mkdir()
         (root / "AGENTS.md").write_text("# Agent rules\n", encoding="utf-8")
+        if codex_dispatch_mode is not None:
+            (root / ".trellis" / "config.yaml").write_text(
+                f"# project config\ncodex:\n  dispatch_mode: {codex_dispatch_mode}  # explicit test value\n",
+                encoding="utf-8",
+            )
     if claude:
         (root / ".claude" / "agents").mkdir(parents=True)
         (root / ".claude" / "agents" / "trellis-implement.md").write_text(CLAUDE_IMPLEMENT, encoding="utf-8")
@@ -150,6 +161,35 @@ def test_codex_profile_and_idempotence() -> None:
         assert second.returncode == 0, second.stderr
         assert (repo / ".trellis" / "workflow.md").read_text(encoding="utf-8") == workflow
         assert (repo / "AGENTS.md").read_text(encoding="utf-8").count("TRELLIS-MATT-BRIDGE:START") == 1
+
+
+def test_codex_explicit_sub_agent_mode_fails_before_write() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        make_repo(repo, codex=True, codex_dispatch_mode="sub-agent")
+        workflow_path = repo / ".trellis" / "workflow.md"
+        agents_path = repo / "AGENTS.md"
+        workflow_before = workflow_path.read_text(encoding="utf-8")
+        agents_before = agents_path.read_text(encoding="utf-8")
+
+        result = run(str(repo), "--profile", "codex")
+
+        assert result.returncode == 4
+        assert "supports Trellis inline mode only" in result.stderr
+        assert "codex.dispatch_mode: sub-agent" in result.stderr
+        assert workflow_path.read_text(encoding="utf-8") == workflow_before
+        assert agents_path.read_text(encoding="utf-8") == agents_before
+        assert not (repo / ".trellis" / "workflow.md.pre-trellis-matt-bridge").exists()
+        assert not (repo / ".agents" / "skills").exists()
+
+
+def test_codex_explicit_inline_mode_is_supported() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        make_repo(repo, codex=True, codex_dispatch_mode="inline")
+        result = run(str(repo), "--profile", "codex")
+        assert result.returncode == 0, result.stderr
+        assert (repo / ".agents" / "skills" / "trellis-matt-implement" / "SKILL.md").is_file()
 
 
 def test_claude_profile_patches_subagents_and_preserves_other_platforms() -> None:
@@ -239,9 +279,11 @@ def test_unknown_layout_fails_without_write() -> None:
 
 if __name__ == "__main__":
     test_codex_profile_and_idempotence()
+    test_codex_explicit_sub_agent_mode_fails_before_write()
+    test_codex_explicit_inline_mode_is_supported()
     test_claude_profile_patches_subagents_and_preserves_other_platforms()
     test_auto_detects_both_profiles()
     test_profiles_can_be_added_sequentially()
     test_dry_run_does_not_write()
     test_unknown_layout_fails_without_write()
-    print("ok: v2 installer tests passed")
+    print("ok: v2.0.1 installer tests passed")
