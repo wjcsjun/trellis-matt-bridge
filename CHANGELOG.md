@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.0.1
+
+- Add a Codex preflight that verifies `.codex/` exists before installing the Codex profile.
+- Treat an omitted Codex dispatch setting as Trellis's current `inline` default.
+- Refuse explicit non-inline Codex dispatch modes before any file is changed, because v2 only Matt-powers the Codex inline path.
+- Add tests for explicit `inline` and `sub-agent` Codex configuration.
+- Clarify the Codex compatibility boundary in the README.
+- Keep the Claude Code design unchanged: current Claude Code documentation states that sub-agents cannot spawn other sub-agents, so Matt `code-review` remains represented by the bridge's inline Spec/Standards review inside `trellis-check`.
+
 ## v2.0.0
 
 - Add first-class Claude Code support while retaining the Codex inline profile.
