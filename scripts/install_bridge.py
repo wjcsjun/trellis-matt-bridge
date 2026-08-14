@@ -29,7 +29,7 @@ CODEX_POLICY = f"""{BRIDGE_START}
 - In Codex inline mode, use `trellis-matt-implement`, then `trellis-matt-check`, before Trellis Phase 3.
 - Never auto-invoke Matt's top-level `implement` during an active Trellis task; it commits and overlaps with Trellis ownership.
 - Keep durable knowledge single-sourced: domain vocabulary in `CONTEXT.md`/mapped context, surprising hard-to-reverse decisions in ADRs, reusable conventions in `.trellis/spec/`, task-local facts in `.trellis/tasks/`.
-- If `codex.dispatch_mode` is switched to `sub-agent`, Trellis's stock sub-agent route stays authoritative; this profile only rewrites the inline route.
+- This profile requires an explicit `codex.dispatch_mode: inline`; Trellis's current `auto`/sub-agent route is intentionally unsupported because the bridge only rewrites the inline path.
 {BRIDGE_END}
 """
 
@@ -40,7 +40,7 @@ CLAUDE_POLICY = f"""{BRIDGE_START}
 - During planning, use `trellis-matt-plan`; on Claude Code it may compose with the installed `mattpocock-skills` plugin (`grilling`, `domain-modeling`).
 - Keep Trellis's `trellis-implement` and `trellis-check` sub-agents as execution owners. The bridge preloads `trellis-matt-implement` / `trellis-matt-check` into those agents.
 - The implement agent may also preload Matt's `tdd`, `codebase-design`, and `diagnosing-bugs` plugin skills. It must never commit, push, promote specs, or finish/archive the task.
-- Do not run Matt's `code-review` orchestrator inside `trellis-check`: Claude Code sub-agents cannot spawn sub-agents. The bridge check adapter performs the same two-axis review inline instead.
+- Do not run Matt's `code-review` orchestrator inside `trellis-check`: even though current Claude Code supports nested sub-agents, a second review orchestrator would blur Trellis's Phase 2 ownership. The bridge check adapter performs the same two-axis review inline instead.
 - Never auto-invoke Matt's top-level `implement` during an active Trellis task; it commits and overlaps with Trellis ownership.
 {BRIDGE_END}
 """
@@ -151,7 +151,7 @@ Spawn the Trellis check sub-agent exactly as usual:
 - **Dispatch prompt guard**: start with `Active task: <task path>`, then state that it is already the check sub-agent and must not redispatch implement/check.
 - The bridge patches `.claude/agents/trellis-check.md` to preload `trellis-matt-check`.
 - The adapter performs separate Spec-fidelity and Engineering-standards passes, fixes clear in-scope findings, and reruns validation.
-- Do NOT invoke Matt `code-review` from inside this sub-agent: it spawns review sub-agents, while Claude Code sub-agents cannot spawn sub-agents.
+- Do NOT invoke Matt `code-review` from inside this sub-agent: current Claude Code can nest sub-agents, but a second review orchestrator here would duplicate ownership inside Trellis's check phase.
 [/Claude Code]"""
 
 CLAUDE_ROUTING = """[Claude Code]
@@ -345,15 +345,15 @@ def detect_profiles(repo_root: Path) -> set[str]:
 
 
 def read_codex_dispatch_mode(repo_root: Path) -> str:
-    """Return the explicitly configured Codex dispatch mode, or Trellis's inline default.
+    """Return the configured Codex dispatch mode, or Trellis's current ``auto`` default.
 
     Trellis currently uses a small top-level `codex:` YAML block. Avoid adding a
     PyYAML dependency just for this preflight: read only the `dispatch_mode` scalar
-    inside that block and treat an omitted block/key as the current `inline` default.
+    inside that block, normalize its case, and treat an omitted block/key as `auto`.
     """
     config = repo_root / ".trellis" / "config.yaml"
     if not config.is_file():
-        return "inline"
+        return "auto"
 
     lines = config.read_text(encoding="utf-8").splitlines()
     codex_indent: int | None = None
@@ -367,8 +367,8 @@ def read_codex_dispatch_mode(repo_root: Path) -> str:
             dispatch = re.search(r"(?:^|,)\s*dispatch_mode\s*:\s*([^,}]+)", inline_block.group(1))
             if dispatch:
                 value = dispatch.group(1).strip().strip("'\"")
-                return value or "inline"
-            return "inline"
+                return (value or "auto").lower()
+            return "auto"
 
         indent = len(line) - len(line.lstrip(" "))
         if codex_indent is None:
@@ -383,9 +383,9 @@ def read_codex_dispatch_mode(repo_root: Path) -> str:
         if not match:
             continue
         value = match.group(1).split("#", 1)[0].strip().strip("'\"")
-        return value or "inline"
+        return (value or "auto").lower()
 
-    return "inline"
+    return "auto"
 
 
 def backup_once(path: Path) -> Path:
@@ -421,10 +421,10 @@ def main() -> int:
         dispatch_mode = read_codex_dispatch_mode(repo_root)
         if dispatch_mode != "inline":
             print(
-                "error: the Codex bridge profile supports Trellis inline mode only, but "
-                f".trellis/config.yaml sets codex.dispatch_mode: {dispatch_mode}. "
-                "Set it to `inline` (or remove the explicit setting; current Trellis defaults to inline), "
-                "then rerun. No files were changed.",
+                "error: the Codex bridge profile supports Trellis inline mode only, but the target "
+                f"resolves codex.dispatch_mode to {dispatch_mode}. "
+                "Set codex.dispatch_mode explicitly to `inline`; current Trellis defaults to `auto` "
+                "and dispatches Codex sub-agents. Then rerun. No files were changed.",
                 file=sys.stderr,
             )
             return 4

@@ -47,9 +47,9 @@ The design rule is unchanged from v1:
 
 ### Codex profile
 
-Codex keeps the v1 strategy: **inline execution**. Current Trellis stable defaults Codex to `inline`; the installer places the three bridge skills under `.agents/skills/` and rewrites only the Codex-inline implementation/check routing.
+Codex keeps the v1 strategy: **inline execution**. Current Trellis defaults Codex to `auto`, which dispatches native sub-agents, so this bridge requires the target project to set `codex.dispatch_mode: inline` explicitly. The installer places the three bridge skills under `.agents/skills/` and rewrites only the Codex-inline implementation/check routing.
 
-The v2 Codex adapter does **not** Matt-power Trellis's Codex sub-agent route. As a safety check, installation stops before writing if `.trellis/config.yaml` explicitly selects a non-inline `codex.dispatch_mode` (for example `sub-agent`). Set it to `inline`, or remove the explicit setting and use Trellis's current inline default, before installing this profile.
+The v2 Codex adapter does **not** Matt-power Trellis's Codex sub-agent route. As a safety check, installation stops before writing unless `.trellis/config.yaml` explicitly selects `codex.dispatch_mode: inline`. An omitted setting resolves to Trellis's current `auto` default and is rejected, as are explicit `auto` and `sub-agent` values.
 
 ### Claude Code profile
 
@@ -67,7 +67,7 @@ The installer:
 4. patches `.claude/agents/trellis-check.md` to preload `trellis-matt-check`;
 5. writes a managed policy block to `CLAUDE.md`.
 
-Matt's `code-review` is **not** preloaded into the Trellis check sub-agent. `code-review` itself orchestrates parallel review sub-agents, while Claude Code sub-agents cannot spawn sub-agents. `trellis-matt-check` therefore performs the same Spec-vs-Standards split inline inside the Trellis check agent.
+Matt's `code-review` is **not** preloaded into the Trellis check sub-agent. Current Claude Code can nest sub-agents, but running `code-review` there would create a second review orchestrator inside Trellis's check phase and blur phase ownership. `trellis-matt-check` therefore performs the same Spec-vs-Standards split inline inside the Trellis check agent.
 
 ## Why not call Matt's top-level `implement` directly?
 
@@ -149,11 +149,18 @@ python3 scripts/install_bridge.py /path/to/project --profile both --dry-run
 
 ### Codex dispatch-mode preflight
 
-The Codex profile is intentionally inline-only in v2. Before calculating or writing patches, the installer checks `.trellis/config.yaml`:
+The Codex profile is intentionally inline-only in v2. Configure the target project explicitly:
 
-- missing `codex:` / missing `dispatch_mode` -> treated as Trellis's current `inline` default;
+```yaml
+codex:
+  dispatch_mode: inline
+```
+
+Before calculating or writing patches, the installer checks `.trellis/config.yaml`:
+
 - `codex.dispatch_mode: inline` -> supported;
-- an explicit non-inline value such as `sub-agent` -> exit before changing `workflow.md`, `AGENTS.md`, backups, or skill directories.
+- missing `codex:` / missing `dispatch_mode` -> resolves to Trellis's current `auto` default and is rejected;
+- explicit `auto`, `sub-agent`, or any other non-inline value -> exit before changing `workflow.md`, `AGENTS.md`, backups, or skill directories.
 
 This prevents a misleading partial install where planning is bridged but Codex implementation/check are still owned by Trellis's stock sub-agents.
 
@@ -248,7 +255,7 @@ python3 tests/test_install_bridge.py
 Tests cover:
 
 - Codex-only installation and idempotence;
-- Codex dispatch-mode preflight (`inline` accepted, explicit `sub-agent` rejected before writes);
+- Codex dispatch-mode preflight (explicit `inline` accepted; missing, `auto`, and `sub-agent` rejected before writes);
 - Claude-only installation and sub-agent skill preloading;
 - preservation of non-Claude platform routing;
 - automatic dual-profile detection;
@@ -261,6 +268,7 @@ Tests cover:
 ```text
 trellis-matt-bridge/
 ├── README.md
+├── README.zh-CN.md
 ├── CHANGELOG.md
 ├── NOTICE.md
 ├── LICENSE

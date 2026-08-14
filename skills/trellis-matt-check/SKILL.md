@@ -15,7 +15,7 @@ Review the complete task diff from two independent perspectives: did we build th
 4. Review two axes separately before combining findings:
    - **Spec axis:** every acceptance criterion, design constraint, agreed seam, and required validation is satisfied; no extra scope slipped in.
    - **Standards axis:** repository conventions are followed; names use domain vocabulary; modules keep clean interfaces; tests verify behavior rather than internals; obvious Fowler-style smells are challenged as judgment calls, not automatic violations.
-5. On Claude Code, do **not** invoke Matt `code-review` from inside the Trellis check sub-agent. Matt `code-review` orchestrates parallel review sub-agents, while Claude Code sub-agents cannot spawn sub-agents. Apply its two-axis method directly in this adapter instead.
+5. On Claude Code, do **not** invoke Matt `code-review` from inside the Trellis check sub-agent. Current Claude Code supports nested sub-agents, but Matt `code-review` would start a second review orchestrator inside Trellis's check phase and blur phase ownership. Apply its two-axis method directly in this adapter instead.
 6. Run the task's required tests, lint, type-check, and other validation commands. For multi-package work, perform a final full-scope pass across every affected package.
 7. Fix clear in-scope findings directly, then rerun the smallest relevant check. Repeat until green or until a finding requires a requirements/design decision.
 8. If a finding changes requirements or a hard design choice, stop and return the task to planning instead of deciding it here.

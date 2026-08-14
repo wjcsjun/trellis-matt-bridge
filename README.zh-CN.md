@@ -157,23 +157,19 @@ AGENTS.md
 .trellis/config.yaml
 ```
 
-以下情况允许安装：
+只有以下显式配置允许安装：
 
 ```yaml
 codex:
   dispatch_mode: inline
 ```
 
-或者完全没有设置 `dispatch_mode`。
+当前 Trellis 将缺少 `codex:`、缺少 `dispatch_mode` 的情况解析为默认的 `auto`，并调度原生 Codex sub-agent。因此以下情况都会在修改任何文件之前停止：
 
-如果显式配置成：
-
-```yaml
-codex:
-  dispatch_mode: sub-agent
-```
-
-安装器会在修改任何文件之前停止。
+- 完全没有设置 `dispatch_mode`；
+- 显式设置 `dispatch_mode: auto`；
+- 显式设置 `dispatch_mode: sub-agent`；
+- 其他任何非 `inline` 值。
 
 这是为了避免出现：
 
@@ -237,7 +233,7 @@ CLAUDE.md
 
 # 为什么 Claude 的 check agent 不直接调用 Matt `code-review`？
 
-Matt 的 `code-review` 本身是一个 orchestration workflow，会再启动独立的 review agents。
+Matt 的 `code-review` 本身是一个 orchestration workflow，会再启动独立的 review agents。当前 Claude Code 已支持嵌套 sub-agent，但在 Trellis check 阶段再次启动一套 review orchestration 会造成重复调度和阶段所有权模糊。
 
 而本项目希望：
 
@@ -533,6 +529,8 @@ python3 scripts/install_bridge.py /path/to/project --profile both
 git diff
 ```
 
+安装器修改 `.claude/agents/` 或 agent policy 后，请重启相应的 Claude Code / Codex agent session，使新定义生效。
+
 ---
 
 # 安装器会修改什么？
@@ -638,7 +636,7 @@ python3 tests/test_install_bridge.py
 - dry-run；
 - backup；
 - Codex inline dispatch preflight；
-- 显式 `sub-agent` 的 fail-fast；
+- 缺省、显式 `auto` 和显式 `sub-agent` 的写入前 fail-fast；
 - Claude sub-agent skill preload；
 - 保留其他 Trellis 平台路由；
 - 未知 Trellis workflow layout 的 fail-safe。
@@ -646,7 +644,7 @@ python3 tests/test_install_bridge.py
 成功时：
 
 ```text
-ok: v2.0.1 installer tests passed
+ok: v2.0.2 installer tests passed
 ```
 
 ---

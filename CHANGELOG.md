@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.0.2
+
+- Align the Codex dispatch preflight with current Trellis semantics: an omitted setting resolves to `auto`, not `inline`.
+- Require an explicit `codex.dispatch_mode: inline` for the Codex bridge profile.
+- Reject missing, `auto`, `sub-agent`, and other non-inline values before backups, policy edits, or skill installation.
+- Expand tests for the missing/default and explicit non-inline Codex cases.
+- Reframe the Claude check design as a single-owner orchestration policy now that current Claude Code supports nested sub-agents.
+- Synchronize the English and Simplified Chinese README operational guidance and repository layout.
+
 ## v2.0.1
 
 - Add a Codex preflight that verifies `.codex/` exists before installing the Codex profile.

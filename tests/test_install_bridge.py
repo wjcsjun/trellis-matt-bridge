@@ -122,7 +122,7 @@ def make_repo(
     *,
     codex: bool = False,
     claude: bool = False,
-    codex_dispatch_mode: str | None = None,
+    codex_dispatch_mode: str | None = "inline",
 ) -> None:
     (root / ".trellis").mkdir(parents=True)
     (root / ".trellis" / "workflow.md").write_text(FIXTURE, encoding="utf-8")
@@ -163,10 +163,10 @@ def test_codex_profile_and_idempotence() -> None:
         assert (repo / "AGENTS.md").read_text(encoding="utf-8").count("TRELLIS-MATT-BRIDGE:START") == 1
 
 
-def test_codex_explicit_sub_agent_mode_fails_before_write() -> None:
+def assert_codex_mode_fails_before_write(codex_dispatch_mode: str | None, expected_mode: str) -> None:
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
-        make_repo(repo, codex=True, codex_dispatch_mode="sub-agent")
+        make_repo(repo, codex=True, codex_dispatch_mode=codex_dispatch_mode)
         workflow_path = repo / ".trellis" / "workflow.md"
         agents_path = repo / "AGENTS.md"
         workflow_before = workflow_path.read_text(encoding="utf-8")
@@ -176,11 +176,21 @@ def test_codex_explicit_sub_agent_mode_fails_before_write() -> None:
 
         assert result.returncode == 4
         assert "supports Trellis inline mode only" in result.stderr
-        assert "codex.dispatch_mode: sub-agent" in result.stderr
+        assert f"resolves codex.dispatch_mode to {expected_mode}" in result.stderr
+        assert "Set codex.dispatch_mode explicitly to `inline`" in result.stderr
         assert workflow_path.read_text(encoding="utf-8") == workflow_before
         assert agents_path.read_text(encoding="utf-8") == agents_before
         assert not (repo / ".trellis" / "workflow.md.pre-trellis-matt-bridge").exists()
         assert not (repo / ".agents" / "skills").exists()
+
+
+def test_codex_missing_dispatch_mode_fails_before_write() -> None:
+    assert_codex_mode_fails_before_write(None, "auto")
+
+
+def test_codex_explicit_non_inline_modes_fail_before_write() -> None:
+    for mode in ("auto", "sub-agent"):
+        assert_codex_mode_fails_before_write(mode, mode)
 
 
 def test_codex_explicit_inline_mode_is_supported() -> None:
@@ -279,11 +289,12 @@ def test_unknown_layout_fails_without_write() -> None:
 
 if __name__ == "__main__":
     test_codex_profile_and_idempotence()
-    test_codex_explicit_sub_agent_mode_fails_before_write()
+    test_codex_missing_dispatch_mode_fails_before_write()
+    test_codex_explicit_non_inline_modes_fail_before_write()
     test_codex_explicit_inline_mode_is_supported()
     test_claude_profile_patches_subagents_and_preserves_other_platforms()
     test_auto_detects_both_profiles()
     test_profiles_can_be_added_sequentially()
     test_dry_run_does_not_write()
     test_unknown_layout_fails_without_write()
-    print("ok: v2.0.1 installer tests passed")
+    print("ok: v2.0.2 installer tests passed")
