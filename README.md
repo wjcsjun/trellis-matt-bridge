@@ -1,5 +1,7 @@
 # trellis-matt-bridge
 
+**English** | [简体中文](./README.zh-CN.md)
+
 A small **multi-agent bridge for Codex + Claude Code** that keeps **Trellis as the workflow/lifecycle owner** while using **Matt Pocock's engineering methods inside selected phases**.
 
 This repo deliberately does **not** vendor or fork either upstream project:
