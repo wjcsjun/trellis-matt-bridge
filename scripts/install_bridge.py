@@ -65,9 +65,8 @@ Do not dispatch implement/check sub-agents in inline mode unless the user explic
 Do not invoke Matt's top-level `implement` wrapper inside the active Trellis task; bridge adapters must not commit, push, promote specs, or finish the task.
 [/workflow-state:in_progress-inline]"""
 
-PHASE_11 = """#### 1.1 Requirement exploration `[required · repeatable]`
-
-On Claude Code or Codex with this bridge installed, load `trellis-matt-plan`; other platforms keep the stock `trellis-brainstorm` path. Trellis remains the lifecycle owner.
+PHASE_11_BLOCK = f"""{BRIDGE_START}
+On Claude Code or Codex with this bridge installed, load `trellis-matt-plan` in place of the stock `trellis-brainstorm` path described below; other platforms keep that stock path unchanged. Trellis remains the lifecycle owner either way.
 
 The bridge adapter must:
 - ask exactly one unresolved product/design decision at a time;
@@ -77,18 +76,14 @@ The bridge adapter must:
 - keep domain vocabulary in `CONTEXT.md`/mapped context and use ADRs only for hard-to-reverse surprising trade-offs;
 - never edit production code or run `task.py start`.
 
-For multi-deliverable work, preserve Trellis parent/child semantics: the parent owns source requirements and integration criteria; independently verifiable deliverables belong in children, and dependency order belongs in child artifacts rather than tree position.
-
-Return here whenever requirements change. When planning is ready, continue through Trellis Phase 1.2/1.3 as applicable and the existing review/start gate in Phase 1.4.
-"""
+Trellis parent/child semantics below still apply, and planning still ends at the existing review/start gate in Phase 1.4.
+{BRIDGE_END}"""
 
 CODEX_13 = """[codex-inline]
 Skip this step. Inline context is loaded directly by `trellis-matt-implement` from task artifacts, `.trellis/spec/`, and task research in Phase 2.
 [/codex-inline]"""
 
-OTHERS_INLINE_13 = """[Kilo, Antigravity, Devin]
-Skip this step. Context is loaded directly by the `trellis-before-dev` skill in Phase 2.
-[/Kilo, Antigravity, Devin]"""
+OTHERS_INLINE_13_BODY = """Skip this step. Context is loaded directly by the `trellis-before-dev` skill in Phase 2."""
 
 CODEX_21 = """[codex-inline]
 1. Load `trellis-matt-implement`.
@@ -98,13 +93,11 @@ CODEX_21 = """[codex-inline]
 5. Stop without committing, promoting specs, or finishing the Trellis task.
 [/codex-inline]"""
 
-OTHERS_INLINE_21 = """[Kilo, Antigravity, Devin]
-1. Load the `trellis-before-dev` skill to read project guidelines.
+OTHERS_INLINE_21_BODY = """1. Load the `trellis-before-dev` skill to read project guidelines.
 2. Read `{TASK_DIR}/prd.md`, then `design.md` if present, then `implement.md` if present.
 3. Consult materials under `{TASK_DIR}/research/`.
 4. Implement the code per reviewed artifacts.
-5. Run project lint and type-check.
-[/Kilo, Antigravity, Devin]"""
+5. Run project lint and type-check."""
 
 CODEX_22 = """[codex-inline]
 Load `trellis-matt-check` and verify the complete task diff on two independent axes:
@@ -114,14 +107,12 @@ Load `trellis-matt-check` and verify the complete task diff on two independent a
 Fix clear in-scope findings and re-run validation until green. If a finding requires a requirements or hard-design decision, return to planning rather than deciding it here.
 [/codex-inline]"""
 
-OTHERS_INLINE_22 = """[Kilo, Antigravity, Devin]
-Load the `trellis-check` skill and verify the code per its guidance:
+OTHERS_INLINE_22_BODY = """Load the `trellis-check` skill and verify the code per its guidance:
 - Spec compliance
 - lint / type-check / tests
 - Cross-layer consistency (when changes span layers)
 
-If issues are found -> fix -> re-check, until green.
-[/Kilo, Antigravity, Devin]"""
+If issues are found -> fix -> re-check, until green."""
 
 CODEX_ROUTING = """[codex-inline]
 - Planning or unclear requirements -> `trellis-matt-plan`.
@@ -130,11 +121,9 @@ CODEX_ROUTING = """[codex-inline]
 - Commit / finish remain Trellis Phase 3 responsibilities.
 [/codex-inline]"""
 
-OTHERS_INLINE_ROUTING = """[Kilo, Antigravity, Devin]
-- Planning or unclear requirements -> `trellis-brainstorm`.
+OTHERS_INLINE_ROUTING_BODY = """- Planning or unclear requirements -> `trellis-brainstorm`.
 - Before editing -> `trellis-before-dev`; after editing -> `trellis-check`.
-- Repeated debugging -> `trellis-break-loop`; spec updates -> `trellis-update-spec`.
-[/Kilo, Antigravity, Devin]"""
+- Repeated debugging -> `trellis-break-loop`; spec updates -> `trellis-update-spec`."""
 
 CLAUDE_21 = """[Claude Code]
 Spawn the Trellis implement sub-agent exactly as usual:
@@ -171,32 +160,74 @@ CLAUDE_CHECK_SKILLS = ["trellis-matt-check"]
 
 
 def replace_state_block(text: str, state: str, replacement: str) -> tuple[str, bool]:
-    pattern = re.compile(rf"\[workflow-state:{re.escape(state)}\].*?\[/workflow-state:{re.escape(state)}\]", re.DOTALL)
-    new_text, count = pattern.subn(replacement, text, count=1)
-    return new_text, count == 1
+    """Replace one `[workflow-state:STATE]` block.
+
+    The tags must own their whole line. Trellis's maintainer comment block lists
+    the same tag names indented as prose (`    [workflow-state:planning] -> ...`);
+    an unanchored pattern starts there and swallows every section up to the first
+    real closing tag.
+    """
+    pattern = re.compile(rf"(?ms)^\[workflow-state:{re.escape(state)}\]$.*?^\[/workflow-state:{re.escape(state)}\]$")
+    match = pattern.search(text)
+    if not match:
+        return text, False
+    return text[: match.start()] + replacement.rstrip() + text[match.end() :], True
 
 
-def replace_heading_section(text: str, start: str, end: str, replacement: str) -> tuple[str, bool]:
-    pattern = re.compile(rf"(?ms)^{start}.*?(?=^{end})")
-    new_text, count = pattern.subn(replacement.rstrip() + "\n", text, count=1)
-    return new_text, count == 1
+def patch_phase_11(text: str) -> tuple[str, bool]:
+    """Insert the managed bridge block directly under the Phase 1.1 heading.
+
+    Trellis's own 1.1 guidance stays in place: platforms without the bridge keep
+    the stock `trellis-brainstorm` path, and a later `trellis update` can rewrite
+    that prose without the bridge silently discarding it.
+    """
+    heading = re.search(r"(?m)^####\s+1\.1\b[^\n]*\n", text)
+    if not heading:
+        return text, False
+    tail = text[heading.end() :]
+    end = re.search(r"(?m)^####\s+1\.2\b", tail)
+    if not end:
+        return text, False
+
+    section = tail[: end.start()]
+    managed = re.compile(re.escape(BRIDGE_START) + r".*?" + re.escape(BRIDGE_END) + r"\n*", re.DOTALL)
+    found = managed.search(section)
+    block = PHASE_11_BLOCK.rstrip() + "\n\n"
+    if found:
+        section = section[: found.start()] + block + section[found.end() :]
+    else:
+        section = block + section.lstrip("\n")
+    return text[: heading.end()] + section + tail[end.start() :], True
 
 
-def split_or_update_codex_group(section: str, codex_replacement: str, others_replacement: str) -> tuple[str, bool]:
+def split_or_update_codex_group(section: str, codex_replacement: str, others_body: str) -> tuple[str, bool]:
+    """Give `codex-inline` its own block, leaving the other platforms theirs.
+
+    The companion platform list is read from the file rather than hardcoded, so a
+    platform Trellis adds to the shared group (0.6.15 added `DeepSeek Harness`)
+    is still matched here and still keeps its instructions afterwards.
+    """
     existing = re.compile(r"(?ms)^\[codex-inline\]\n.*?^\[/codex-inline\]\n?")
-    if existing.search(section):
-        return existing.sub(codex_replacement.rstrip() + "\n", section, count=1), True
-    shared = re.compile(r"(?ms)^\[codex-inline,\s*Kilo,\s*Antigravity,\s*Devin\]\n.*?^\[/codex-inline,\s*Kilo,\s*Antigravity,\s*Devin\]\n?")
-    if not shared.search(section):
+    match = existing.search(section)
+    if match:
+        block = codex_replacement.rstrip() + "\n"
+        return section[: match.start()] + block + section[match.end() :], True
+
+    shared = re.compile(r"(?ms)^\[codex-inline(,[^\]\n]*)\]\n.*?^\[/codex-inline\1\]\n?")
+    match = shared.search(section)
+    if not match:
         return section, False
-    replacement = codex_replacement.rstrip() + "\n\n" + others_replacement.rstrip() + "\n"
-    return shared.sub(replacement, section, count=1), True
+    others = match.group(1).lstrip(",").strip()
+    block = codex_replacement.rstrip() + "\n\n" + f"[{others}]\n{others_body.rstrip()}\n[/{others}]\n"
+    return section[: match.start()] + block + section[match.end() :], True
 
 
 def split_platform_group(section: str, platform: str, replacement: str) -> tuple[str, bool]:
     separate = re.compile(rf"(?ms)^\[{re.escape(platform)}\]\n.*?^\[/{re.escape(platform)}\]\n?")
-    if separate.search(section):
-        return separate.sub(replacement.rstrip() + "\n", section, count=1), True
+    match = separate.search(section)
+    if match:
+        block = replacement.rstrip() + "\n"
+        return section[: match.start()] + block + section[match.end() :], True
 
     block_re = re.compile(r"(?ms)^\[([^\]\n]+)\]\n(.*?)^\[/\1\]\n?")
     for match in block_re.finditer(section):
@@ -229,7 +260,7 @@ def patch_common_planning(text: str) -> tuple[str, list[str]]:
     text, changed = replace_state_block(text, "planning", PLANNING_STATE)
     if not changed:
         failures.append("workflow-state:planning")
-    text, changed = replace_heading_section(text, r"####\s+1\.1\b[^\n]*", r"####\s+1\.2\b[^\n]*", PHASE_11)
+    text, changed = patch_phase_11(text)
     if not changed:
         failures.append("Phase 1.1 -> 1.2")
     return text, failures
@@ -242,14 +273,14 @@ def patch_codex_workflow(text: str) -> tuple[str, list[str]]:
         if not changed:
             failures.append(f"workflow-state:{state}")
     for start, end, repl, other, label in (
-        (r"####\s+1\.3\b[^\n]*", r"####\s+1\.4\b[^\n]*", CODEX_13, OTHERS_INLINE_13, "Phase 1.3 codex-inline"),
-        (r"####\s+2\.1\b[^\n]*", r"####\s+2\.2\b[^\n]*", CODEX_21, OTHERS_INLINE_21, "Phase 2.1 codex-inline"),
-        (r"####\s+2\.2\b[^\n]*", r"####\s+2\.3\b[^\n]*", CODEX_22, OTHERS_INLINE_22, "Phase 2.2 codex-inline"),
+        (r"####\s+1\.3\b[^\n]*", r"####\s+1\.4\b[^\n]*", CODEX_13, OTHERS_INLINE_13_BODY, "Phase 1.3 codex-inline"),
+        (r"####\s+2\.1\b[^\n]*", r"####\s+2\.2\b[^\n]*", CODEX_21, OTHERS_INLINE_21_BODY, "Phase 2.1 codex-inline"),
+        (r"####\s+2\.2\b[^\n]*", r"####\s+2\.3\b[^\n]*", CODEX_22, OTHERS_INLINE_22_BODY, "Phase 2.2 codex-inline"),
     ):
         text, changed = patch_section(text, start, end, lambda s, a=repl, b=other: split_or_update_codex_group(s, a, b))
         if not changed:
             failures.append(label)
-    text, changed = patch_section(text, r"###\s+Active Task Routing\b", r"###\s+Guardrails\b", lambda s: split_or_update_codex_group(s, CODEX_ROUTING, OTHERS_INLINE_ROUTING))
+    text, changed = patch_section(text, r"###\s+Active Task Routing\b", r"###\s+Guardrails\b", lambda s: split_or_update_codex_group(s, CODEX_ROUTING, OTHERS_INLINE_ROUTING_BODY))
     if not changed:
         failures.append("Active Task Routing codex-inline")
     return text, failures
@@ -268,6 +299,50 @@ def patch_claude_workflow(text: str) -> tuple[str, list[str]]:
     return text, failures
 
 
+STATE_TAG_RE = re.compile(r"(?m)^\[workflow-state:([A-Za-z0-9_-]+)\]$")
+HEADING_RE = re.compile(r"(?m)^#{2,4} .+$")
+GROUP_RE = re.compile(r"(?m)^\[([^\]\n/][^\]\n]*)\]$")
+
+
+def platform_names(text: str) -> set[str]:
+    names: set[str] = set()
+    for raw in GROUP_RE.findall(text):
+        if raw.startswith("workflow-state:"):
+            continue
+        names.update(part.strip() for part in raw.split(",") if part.strip())
+    return names
+
+
+def assert_structure_preserved(before: str, after: str) -> None:
+    """Fail closed when a patch removed something it was only meant to rewrite.
+
+    Anchors that stop matching already abort the install. This catches the other
+    direction: an anchor that matched the *wrong* span and silently deleted
+    surrounding content. Cheap to run, and it is what a mis-anchored pattern
+    trips on first.
+    """
+    problems: list[str] = []
+
+    lost_states = sorted(set(STATE_TAG_RE.findall(before)) - set(STATE_TAG_RE.findall(after)))
+    if lost_states:
+        problems.append("workflow-state blocks dropped: " + ", ".join(lost_states))
+
+    after_headings = set(HEADING_RE.findall(after))
+    lost_headings = [h for h in dict.fromkeys(HEADING_RE.findall(before)) if h not in after_headings]
+    if lost_headings:
+        problems.append("headings dropped: " + ", ".join(lost_headings))
+
+    lost_platforms = sorted(platform_names(before) - platform_names(after))
+    if lost_platforms:
+        problems.append("platform routing dropped: " + ", ".join(lost_platforms))
+
+    if after.count("<!--") - after.count("-->") != before.count("<!--") - before.count("-->"):
+        problems.append("HTML comment markers became unbalanced")
+
+    if problems:
+        raise RuntimeError("Patched .trellis/workflow.md failed the structural integrity check (" + "; ".join(problems) + "). The file was not overwritten. This is a bridge bug against your Trellis version; please report it.")
+
+
 def patch_workflow(original: str, profiles: set[str]) -> str:
     text, failures = patch_common_planning(original)
     if "codex" in profiles:
@@ -278,13 +353,15 @@ def patch_workflow(original: str, profiles: set[str]) -> str:
         failures.extend(more)
     if failures:
         raise RuntimeError("Unsupported .trellis/workflow.md layout; could not find: " + ", ".join(failures) + ". The file was not overwritten. Update bridge anchors for your Trellis version.")
+    assert_structure_preserved(original, text)
     return text
 
 
 def patch_managed_block(original: str, block: str) -> str:
     pattern = re.compile(re.escape(BRIDGE_START) + r".*?" + re.escape(BRIDGE_END) + r"\n?", re.DOTALL)
-    if pattern.search(original):
-        return pattern.sub(block, original, count=1)
+    match = pattern.search(original)
+    if match:
+        return original[: match.start()] + block + original[match.end() :]
     separator = "" if not original or original.endswith("\n\n") else ("\n" if original.endswith("\n") else "\n\n")
     return original + separator + block
 

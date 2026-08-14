@@ -302,6 +302,8 @@ Trellis trellis-check
 - 执行 `task.py start`；
 - commit。
 
+Trellis 原有的 Phase 1.1 说明会与 bridge 块一起保留在 `workflow.md` 里，因此没装 bridge 的平台不受影响。
+
 ---
 
 ## `trellis-matt-implement`
@@ -616,6 +618,20 @@ Bridge 不会整份替换 Trellis workflow，而是基于结构化 Markdown anch
 
 > **拒绝修改，而不是猜测应该怎么 patch。**
 
+如果 anchor 仍然匹配，但补丁结果会丢掉某个 state block、标题或平台，写盘前的结构完整性检查同样会拒绝这次安装。
+
+---
+
+# workflow.md 的修改方式
+
+`.trellis/workflow.md` 属于 Trellis，因此 bridge 的改动尽可能收窄：
+
+- **Phase 1.1 保留 Trellis 原有的需求探索说明。** Bridge 只在标题下插入一个 managed `<!-- TRELLIS-MATT-BRIDGE -->` 块；没装 bridge 的平台照旧读 `trellis-brainstorm`，之后的 `trellis update` 也可以自由改写那段正文，不会被 bridge 丢弃。
+- **`[workflow-state:*]` 块只在标签独占整行时才匹配。** Trellis 的维护者注释里以缩进正文的形式列出了同名标签；不加锚定的匹配会从注释开始，把中间的章节一并吞掉。
+- **平台组从文件里读取，不写死。** 把 `codex-inline` 从共享组里拆出来时，其余成员按原样重新写回，因此 Trellis 之后新增的平台（0.6.15 新增了 `DeepSeek Harness`）不会丢掉自己的指令。
+
+写盘之前，安装器会核对：没有 `[workflow-state:*]` 块、标题或平台名消失，且 HTML 注释保持配对。任何一项不通过就中止，不改文件。
+
 ---
 
 # 测试
@@ -639,7 +655,22 @@ python3 tests/test_install_bridge.py
 - 缺省、显式 `auto` 和显式 `sub-agent` 的写入前 fail-fast；
 - Claude sub-agent skill preload；
 - 保留其他 Trellis 平台路由；
+- `[workflow-state:*]` 按整行匹配，不被维护者注释里的正文提及误伤；
+- 共享 `codex-inline` 组中额外平台的存活；
+- Trellis 原有 Phase 1.1 正文在 bridge 插入后仍然保留；
+- 结构完整性检查能拒绝有损的补丁；
 - 未知 Trellis workflow layout 的 fail-safe。
+
+测试 fixture 复现的是真实 `.trellis/workflow.md` 的结构陷阱，而不只是安装器要找的那几个 anchor。但 fixture 仍可能与上游脱节，所以发布前请对真实文件跑一次端到端检查：
+
+```bash
+npm pack @mindfoldhq/trellis@latest
+tar xzf mindfoldhq-trellis-*.tgz
+TRELLIS_WORKFLOW_MD=package/dist/templates/trellis/workflow.md \
+  python3 tests/test_install_bridge.py
+```
+
+这个路径也接受已初始化项目里的 `.trellis/workflow.md`。它会安装两个 profile，断言没有内容丢失、文件只增不减，并重跑一次确认幂等。
 
 成功时：
 

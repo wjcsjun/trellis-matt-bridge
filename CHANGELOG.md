@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.0.3
+
+Fixes verified against a real `trellis init` project on Trellis 0.6.15.
+
+- Match `[workflow-state:*]` blocks only when the tags own a whole line. Trellis's maintainer comment lists the same tag names as indented prose, so the previous pattern started there and deleted everything up to the first real closing tag — on 0.6.15 that silently removed the `Phase Index`, `Request Triage`, `Planning Artifacts`, and `Parent / Child Task Trees` sections, the entire `[workflow-state:no_task]` block, and the close of an HTML comment, while still exiting 0.
+- Match the shared `codex-inline` platform group whatever its membership. The hardcoded `[codex-inline, Kilo, Antigravity, Devin]` list stopped matching once 0.6.15 added `DeepSeek Harness`, which failed the whole Codex profile.
+- Re-emit the companion platforms captured from the file instead of a hardcoded list, so a platform Trellis adds to that group keeps its Phase 1.3 / 2.1 / 2.2 / routing instructions.
+- Insert Phase 1.1 guidance as a managed block under the heading instead of replacing the section. Trellis's stock requirement-exploration text survives for platforms that do not use the bridge, and `trellis update` can rewrite it freely.
+- Add a structural integrity check between patching and writing: no `[workflow-state:*]` block, heading, or platform name may disappear, and HTML comments must stay balanced. Anchors that stop matching already aborted the install; this covers anchors that match the wrong span.
+- Rebuild the test fixture around the real file's structural hazards (prose tag mentions inside a maintainer comment, a `no_task` block, an over-long platform group, blank lines inside groups) rather than only the anchors the installer looks for. Each of the four fixes has a regression test that fails against v2.0.2.
+- Add an opt-in end-to-end test against a real `.trellis/workflow.md` via `TRELLIS_WORKFLOW_MD`.
+
 ## v2.0.2
 
 - Align the Codex dispatch preflight with current Trellis semantics: an omitted setting resolves to `auto`, not `inline`.

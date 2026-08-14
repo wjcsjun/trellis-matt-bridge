@@ -172,6 +172,16 @@ git diff
 
 Restart the relevant agent session. Claude Code sub-agent definitions are loaded at session start, so a restart is required after the installer edits `.claude/agents/`.
 
+## How the workflow is patched
+
+Trellis owns `.trellis/workflow.md`, so the bridge edits it as narrowly as it can:
+
+- **Phase 1.1** keeps Trellis's own requirement-exploration guidance. The bridge inserts a managed `<!-- TRELLIS-MATT-BRIDGE -->` block under the heading, so platforms without the bridge still read the stock `trellis-brainstorm` path, and a later `trellis update` can rewrite that prose without the bridge discarding it.
+- **`[workflow-state:*]` blocks** are matched only when the tags own a whole line. Trellis's maintainer comment lists the same tag names as indented prose; an unanchored match starts there and swallows the sections in between.
+- **Platform groups** are read from the file rather than hardcoded. When `codex-inline` is split out of a shared group, the remaining members are re-emitted exactly as found, so a platform Trellis adds later (0.6.15 added `DeepSeek Harness`) keeps its instructions.
+
+After patching and before writing, the installer verifies that no `[workflow-state:*]` block, heading, or platform name disappeared and that HTML comments stayed balanced. A patch that fails that check aborts without touching the file.
+
 ## What the installer changes
 
 Common:
@@ -215,6 +225,8 @@ The installer is idempotent: managed policy blocks are updated rather than dupli
 
 Runs only while the Trellis task is `planning`. It uses one-question grilling and domain modeling, writes decisions into Trellis's `prd.md` / `design.md` / `implement.md`, and never starts the task or edits production code.
 
+Trellis's stock Phase 1.1 guidance stays in `workflow.md` alongside the bridge block, so platforms without the bridge are unaffected.
+
 On Claude Code it prefers the plugin namespace (`mattpocock-skills:grilling`, `mattpocock-skills:domain-modeling`). On Codex/skills.sh it uses the unscoped skill names when installed.
 
 ### `trellis-matt-implement`
@@ -242,7 +254,7 @@ python3 /path/to/trellis-matt-bridge/scripts/install_bridge.py /path/to/project 
 git diff
 ```
 
-The installer patches structural Markdown anchors instead of replacing the whole workflow. If a future Trellis release changes the required anchors, it exits before writing rather than guessing.
+The installer patches structural Markdown anchors instead of replacing the whole workflow. If a future Trellis release changes the required anchors, it exits before writing rather than guessing; if an anchor still matches but the resulting patch would drop a state block, heading, or platform, the structural check rejects it before writing.
 
 For Claude Code, `trellis update` may also refresh `.claude/agents/trellis-implement.md` and `trellis-check.md`; rerunning the bridge restores the `skills:` preloads while preserving other existing skills.
 
@@ -258,10 +270,25 @@ Tests cover:
 - Codex dispatch-mode preflight (explicit `inline` accepted; missing, `auto`, and `sub-agent` rejected before writes);
 - Claude-only installation and sub-agent skill preloading;
 - preservation of non-Claude platform routing;
+- `[workflow-state:*]` blocks matched by whole line, not by the maintainer comment's prose mentions;
+- survival of extra platforms in the shared `codex-inline` group;
+- Trellis's stock Phase 1.1 guidance surviving the bridge insert;
+- the structural integrity check rejecting a lossy patch;
 - automatic dual-profile detection;
 - dry-run behavior;
 - first-install backups;
 - failure on an unknown workflow layout.
+
+The fixture reproduces the structural hazards of a real `.trellis/workflow.md` rather than only the anchors the installer looks for. It can still drift from upstream, so run the end-to-end check against a real file before releasing:
+
+```bash
+npm pack @mindfoldhq/trellis@latest
+tar xzf mindfoldhq-trellis-*.tgz
+TRELLIS_WORKFLOW_MD=package/dist/templates/trellis/workflow.md \
+  python3 tests/test_install_bridge.py
+```
+
+That path also accepts an initialized project's `.trellis/workflow.md`. It installs both profiles, asserts nothing was dropped, asserts the file only grew, and reruns to confirm idempotence.
 
 ## Repository layout
 
